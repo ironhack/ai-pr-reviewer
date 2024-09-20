@@ -1,5 +1,5 @@
 const IRONHACK_PROMPT = `
-Please review the provided content against the following guidelines. Is ok if you don't find anything relevant to say, to avoid creating unnecessary noise:
+This is a repository for version control of the educational content for a bootcamp. Please review the provided changes against the following guidelines. Is ok if you don't find anything relevant to say, to avoid creating unnecessary noise:
 Formatting and Structure
 [ ]  Does the lesson start with a "Lesson Overview" section that summarizes the content and purpose?
 [ ]  Is there a "Learning Objectives" section that outlines the key skills and knowledge covered? 

@@ -42,18 +42,18 @@ async function run(): Promise<void> {
 
   // Create two bots, one for summary and one for review
 
-  let lightBot: Bot | null = null
-  try {
-    lightBot = new Bot(
-      options,
-      new OpenAIOptions(options.openaiLightModel, options.lightTokenLimits)
-    )
-  } catch (e: any) {
-    warning(
-      `Skipped: failed to create summary bot, please check your openai_api_key: ${e}, backtrace: ${e.stack}`
-    )
-    return
-  }
+  // let lightBot: Bot | null = null
+  // try {
+  //   lightBot = new Bot(
+  //     options,
+  //     new OpenAIOptions(options.openaiLightModel, options.lightTokenLimits)
+  //   )
+  // } catch (e: any) {
+  //   warning(
+  //     `Skipped: failed to create summary bot, please check your openai_api_key: ${e}, backtrace: ${e.stack}`
+  //   )
+  //   return
+  // }
 
   let heavyBot: Bot | null = null
   try {
@@ -74,7 +74,7 @@ async function run(): Promise<void> {
       process.env.GITHUB_EVENT_NAME === 'pull_request' ||
       process.env.GITHUB_EVENT_NAME === 'pull_request_target'
     ) {
-      await codeReview(lightBot, heavyBot, options, prompts)
+      await codeReview(null, heavyBot, options, prompts)
     } else if (
       process.env.GITHUB_EVENT_NAME === 'pull_request_review_comment'
     ) {

@@ -3,15 +3,7 @@ import {error, info, warning} from '@actions/core'
 import {context as github_context} from '@actions/github'
 import pLimit from 'p-limit'
 import {type Bot} from './bot'
-import {
-  Commenter,
-  COMMENT_REPLY_TAG,
-  RAW_SUMMARY_END_TAG,
-  RAW_SUMMARY_START_TAG,
-  SHORT_SUMMARY_END_TAG,
-  SHORT_SUMMARY_START_TAG,
-  SUMMARIZE_TAG
-} from './commenter'
+import {Commenter, COMMENT_REPLY_TAG, SUMMARIZE_TAG} from './commenter'
 import {Inputs} from './inputs'
 import {octokit} from './octokit'
 import {type Options} from './options'
@@ -25,7 +17,7 @@ const repo = context.repo
 const ignoreKeyword = '@coderabbitai: ignore'
 
 export const codeReview = async (
-  lightBot: Bot,
+  lightBot: Bot | null,
   heavyBot: Bot,
   options: Options,
   prompts: Prompts
@@ -304,203 +296,206 @@ ${
   // add in progress status to the summarize comment
   await commenter.comment(`${inProgressSummarizeCmt}`, SUMMARIZE_TAG, 'replace')
 
-  const summariesFailed: string[] = []
+  //   const doSummary = async (
+  //     filename: string,
+  //     fileContent: string,
+  //     fileDiff: string
+  //   ): Promise<[string, string, boolean] | null> => {
+  //     info(`summarize: ${filename}`)
+  //     const ins = inputs.clone()
+  //     if (fileDiff.length === 0) {
+  //       warning(`summarize: file_diff is empty, skip ${filename}`)
+  //       summariesFailed.push(`${filename} (empty diff)`)
+  //       return null
+  //     }
 
-  const doSummary = async (
-    filename: string,
-    fileContent: string,
-    fileDiff: string
-  ): Promise<[string, string, boolean] | null> => {
-    info(`summarize: ${filename}`)
-    const ins = inputs.clone()
-    if (fileDiff.length === 0) {
-      warning(`summarize: file_diff is empty, skip ${filename}`)
-      summariesFailed.push(`${filename} (empty diff)`)
-      return null
-    }
+  //     ins.filename = filename
+  //     ins.fileDiff = fileDiff
 
-    ins.filename = filename
-    ins.fileDiff = fileDiff
+  //     // render prompt based on inputs so far
+  //     const summarizePrompt = prompts.renderSummarizeFileDiff(
+  //       ins,
+  //       options.reviewSimpleChanges
+  //     )
+  //     const tokens = getTokenCount(summarizePrompt)
 
-    // render prompt based on inputs so far
-    const summarizePrompt = prompts.renderSummarizeFileDiff(
-      ins,
-      options.reviewSimpleChanges
-    )
-    const tokens = getTokenCount(summarizePrompt)
+  //     if (tokens > options.lightTokenLimits.requestTokens) {
+  //       info(`summarize: diff tokens exceeds limit, skip ${filename}`)
+  //       summariesFailed.push(`${filename} (diff tokens exceeds limit)`)
+  //       return null
+  //     }
 
-    if (tokens > options.lightTokenLimits.requestTokens) {
-      info(`summarize: diff tokens exceeds limit, skip ${filename}`)
-      summariesFailed.push(`${filename} (diff tokens exceeds limit)`)
-      return null
-    }
+  //     // summarize content
+  //     try {
+  //       const [summarizeResp = ''] = lightBot
+  //         ? await lightBot.chat(summarizePrompt, {})
+  //         : ['']
 
-    // summarize content
-    try {
-      const [summarizeResp] = await lightBot.chat(summarizePrompt, {})
+  //       if (summarizeResp === '') {
+  //         info('summarize: nothing obtained from openai')
+  //         summariesFailed.push(`${filename} (nothing obtained from openai)`)
+  //         return null
+  //       } else {
+  //         if (options.reviewSimpleChanges === false) {
+  //           // parse the comment to look for triage classification
+  //           // Format is : [TRIAGE]: <NEEDS_REVIEW or APPROVED>
+  //           // if the change needs review return true, else false
+  //           const triageRegex = /\[TRIAGE\]:\s*(NEEDS_REVIEW|APPROVED)/
+  //           const triageMatch = summarizeResp.match(triageRegex)
 
-      if (summarizeResp === '') {
-        info('summarize: nothing obtained from openai')
-        summariesFailed.push(`${filename} (nothing obtained from openai)`)
-        return null
-      } else {
-        if (options.reviewSimpleChanges === false) {
-          // parse the comment to look for triage classification
-          // Format is : [TRIAGE]: <NEEDS_REVIEW or APPROVED>
-          // if the change needs review return true, else false
-          const triageRegex = /\[TRIAGE\]:\s*(NEEDS_REVIEW|APPROVED)/
-          const triageMatch = summarizeResp.match(triageRegex)
+  //           if (triageMatch != null) {
+  //             const triage = triageMatch[1]
+  //             const needsReview = triage === 'NEEDS_REVIEW'
 
-          if (triageMatch != null) {
-            const triage = triageMatch[1]
-            const needsReview = triage === 'NEEDS_REVIEW'
+  //             // remove this line from the comment
+  //             const summary = summarizeResp.replace(triageRegex, '').trim()
+  //             info(`filename: ${filename}, triage: ${triage}`)
+  //             return [filename, summary, needsReview]
+  //           }
+  //         }
+  //         return [filename, summarizeResp, true]
+  //       }
+  //     } catch (e: any) {
+  //       warning(`summarize: error from openai: ${e as string}`)
+  //       summariesFailed.push(`${filename} (error from openai: ${e as string})})`)
+  //       return null
+  //     }
+  //   }
 
-            // remove this line from the comment
-            const summary = summarizeResp.replace(triageRegex, '').trim()
-            info(`filename: ${filename}, triage: ${triage}`)
-            return [filename, summary, needsReview]
-          }
-        }
-        return [filename, summarizeResp, true]
-      }
-    } catch (e: any) {
-      warning(`summarize: error from openai: ${e as string}`)
-      summariesFailed.push(`${filename} (error from openai: ${e as string})})`)
-      return null
-    }
-  }
-
-  const summaryPromises = []
   const skippedFiles = []
-  for (const [filename, fileContent, fileDiff] of filesAndChanges) {
-    if (options.maxFiles <= 0 || summaryPromises.length < options.maxFiles) {
-      summaryPromises.push(
-        openaiConcurrencyLimit(
-          async () => await doSummary(filename, fileContent, fileDiff)
-        )
-      )
-    } else {
-      skippedFiles.push(filename)
-    }
-  }
+  //   for (const [filename, fileContent, fileDiff] of filesAndChanges) {
+  //     if (options.maxFiles <= 0 || summaryPromises.length < options.maxFiles) {
+  //       summaryPromises.push(
+  //         openaiConcurrencyLimit(
+  //           async () => await doSummary(filename, fileContent, fileDiff)
+  //         )
+  //       )
+  //     } else {
+  //       skippedFiles.push(filename)
+  //     }
+  //   }
 
-  const summaries = (await Promise.all(summaryPromises)).filter(
-    summary => summary !== null
-  ) as Array<[string, string, boolean]>
+  //   const summaries = (await Promise.all(summaryPromises)).filter(
+  //     summary => summary !== null
+  //   ) as Array<[string, string, boolean]>
 
-  if (summaries.length > 0) {
-    const batchSize = 10
-    // join summaries into one in the batches of batchSize
-    // and ask the bot to summarize the summaries
-    for (let i = 0; i < summaries.length; i += batchSize) {
-      const summariesBatch = summaries.slice(i, i + batchSize)
-      for (const [filename, summary] of summariesBatch) {
-        inputs.rawSummary += `---
-${filename}: ${summary}
-`
-      }
-      // ask chatgpt to summarize the summaries
-      const [summarizeResp] = await heavyBot.chat(
-        prompts.renderSummarizeChangesets(inputs),
-        {}
-      )
-      if (summarizeResp === '') {
-        warning('summarize: nothing obtained from openai')
-      } else {
-        inputs.rawSummary = summarizeResp
-      }
-    }
-  }
+  //   if (summaries.length > 0) {
+  //     const batchSize = 10
+  //     // join summaries into one in the batches of batchSize
+  //     // and ask the bot to summarize the summaries
+  //     for (let i = 0; i < summaries.length; i += batchSize) {
+  //       const summariesBatch = summaries.slice(i, i + batchSize)
+  //       for (const [filename, summary] of summariesBatch) {
+  //         inputs.rawSummary += `---
+  // ${filename}: ${summary}
+  // `
+  //       }
+  //       // ask chatgpt to summarize the summaries
+  //       const [summarizeResp] = await heavyBot.chat(
+  //         prompts.renderSummarizeChangesets(inputs),
+  //         {}
+  //       )
+  //       if (summarizeResp === '') {
+  //         warning('summarize: nothing obtained from openai')
+  //       } else {
+  //         inputs.rawSummary = summarizeResp
+  //       }
+  //     }
+  //   }
 
-  // final summary
-  const [summarizeFinalResponse] = await heavyBot.chat(
-    prompts.renderSummarize(inputs),
-    {}
-  )
-  if (summarizeFinalResponse === '') {
-    info('summarize: nothing obtained from openai')
-  }
+  //   // final summary
+  //   const [summarizeFinalResponse] = await heavyBot.chat(
+  //     prompts.renderSummarize(inputs),
+  //     {}
+  //   )
+  //   if (summarizeFinalResponse === '') {
+  //     info('summarize: nothing obtained from openai')
+  //   }
 
-  if (options.disableReleaseNotes === false) {
-    // final release notes
-    const [releaseNotesResponse] = await heavyBot.chat(
-      prompts.renderSummarizeReleaseNotes(inputs),
-      {}
-    )
-    if (releaseNotesResponse === '') {
-      info('release notes: nothing obtained from openai')
-    } else {
-      let message = '### Summary\n\n'
-      message += releaseNotesResponse
-      try {
-        await commenter.updateDescription(
-          context.payload.pull_request.number,
-          message
-        )
-      } catch (e: any) {
-        warning(`release notes: error from github: ${e.message as string}`)
-      }
-    }
-  }
+  //   if (options.disableReleaseNotes === false) {
+  //     // final release notes
+  //     const [releaseNotesResponse] = await heavyBot.chat(
+  //       prompts.renderSummarizeReleaseNotes(inputs),
+  //       {}
+  //     )
+  //     if (releaseNotesResponse === '') {
+  //       info('release notes: nothing obtained from openai')
+  //     } else {
+  //       let message = '### Summary\n\n'
+  //       message += releaseNotesResponse
+  //       try {
+  //         await commenter.updateDescription(
+  //           context.payload.pull_request.number,
+  //           message
+  //         )
+  //       } catch (e: any) {
+  //         warning(`release notes: error from github: ${e.message as string}`)
+  //       }
+  //     }
+  //   }
 
-  // generate a short summary as well
-  const [summarizeShortResponse] = await heavyBot.chat(
-    prompts.renderSummarizeShort(inputs),
-    {}
-  )
-  inputs.shortSummary = summarizeShortResponse
+  //   // generate a short summary as well
+  //   const [summarizeShortResponse] = await heavyBot.chat(
+  //     prompts.renderSummarizeShort(inputs),
+  //     {}
+  //   )
+  //   inputs.shortSummary = summarizeShortResponse
 
-  let summarizeComment = `${summarizeFinalResponse}
-${RAW_SUMMARY_START_TAG}
-${inputs.rawSummary}
-${RAW_SUMMARY_END_TAG}
-${SHORT_SUMMARY_START_TAG}
-${inputs.shortSummary}
-${SHORT_SUMMARY_END_TAG}
+  let summarizeComment = ''
 
----
+  //   let summarizeComment = `${summarizeFinalResponse}
+  // ${RAW_SUMMARY_START_TAG}
+  // ${inputs.rawSummary}
+  // ${RAW_SUMMARY_END_TAG}
+  // ${SHORT_SUMMARY_START_TAG}
+  // ${inputs.shortSummary}
+  // ${SHORT_SUMMARY_END_TAG}
 
-`
+  // ---
 
-  statusMsg += `
-${
-  skippedFiles.length > 0
-    ? `
-<details>
-<summary>Files not processed due to max files limit (${
-        skippedFiles.length
-      })</summary>
+  // `
 
-* ${skippedFiles.join('\n* ')}
+  //   statusMsg += `
+  // ${
+  //   skippedFiles.length > 0
+  //     ? `
+  // <details>
+  // <summary>Files not processed due to max files limit (${
+  //         skippedFiles.length
+  //       })</summary>
 
-</details>
-`
-    : ''
-}
-${
-  summariesFailed.length > 0
-    ? `
-<details>
-<summary>Files not summarized due to errors (${
-        summariesFailed.length
-      })</summary>
+  // * ${skippedFiles.join('\n* ')}
 
-* ${summariesFailed.join('\n* ')}
+  // </details>
+  // `
+  //     : ''
+  // }
+  // ${
+  //   summariesFailed.length > 0
+  //     ? `
+  // <details>
+  // <summary>Files not summarized due to errors (${
+  //         summariesFailed.length
+  //       })</summary>
 
-</details>
-`
-    : ''
-}
-`
+  // * ${summariesFailed.join('\n* ')}
+
+  // </details>
+  // `
+  //     : ''
+  // }
+  // `
 
   if (!options.disableReview) {
-    const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
-      const needsReview =
-        summaries.find(
-          ([summaryFilename]) => summaryFilename === filename
-        )?.[2] ?? true
-      return needsReview
-    })
+    const filesAndChangesReview = filesAndChanges
+
+    // const filesAndChangesReview = filesAndChanges.filter(([filename]) => {
+    //   const needsReview =
+    //     summaries.find(
+    //       ([summaryFilename]) => summaryFilename === filename
+    //     )?.[2] ?? true
+    //   return needsReview
+    // })
 
     const reviewsSkipped = filesAndChanges
       .filter(
