@@ -1,5 +1,5 @@
 const IRONHACK_PROMPT = `
-This is a repository for version control of the educational content for a bootcamp. Please review the provided changes against the following guidelines. Is ok if you don't find anything relevant to say, to avoid creating unnecessary noise:
+This is a repository for version control of the educational content for a bootcamp. Please review the provided changes against the following guidelines. Avoid focusing too much in the validity of the code snippets, since they are focused in teaching, not performance or style. Is ok if you don't find anything relevant to say, to avoid creating unnecessary noise:
 Formatting and Structure
 [ ]  Does the lesson start with a "Lesson Overview" section that summarizes the content and purpose?
 [ ]  Is there a "Learning Objectives" section that outlines the key skills and knowledge covered? 
